@@ -1,2 +1,2 @@
 # BD_course_work
-All scripts in one sql-file
+All scripts are in one sql-file
