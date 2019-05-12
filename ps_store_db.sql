@@ -3,15 +3,6 @@ create schema ps_store;
 
 set search_path = ps_store;
 
-drop table STUDIO_X_GAME;
-drop table SPECIAL_OFFER_X_GAME;
-drop table STUDIO;
-drop table PURCHASE;
-drop table SALE;
-drop table SPECIAL_OFFER;
-drop table GAME;
-drop table USERS;
-
 create table GAME (
   game_id   int   primary key ,
   game_nm   varchar(50)   not null ,
