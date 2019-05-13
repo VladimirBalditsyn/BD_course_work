@@ -3,6 +3,15 @@ create schema ps_store;
 
 set search_path = ps_store;
 
+-- drop table STUDIO_X_GAME;
+-- drop table SPECIAL_OFFER_X_GAME;
+-- drop table STUDIO;
+-- drop table PURCHASE;
+-- drop table SALE;
+-- drop table SPECIAL_OFFER;
+-- drop table GAME;
+-- drop table USERS;
+
 create table GAME (
   game_id   int   primary key ,
   game_nm   varchar(50)   not null ,
@@ -395,3 +404,80 @@ create or replace view sale_advanced_v as
 inner join SALE_X_GAME SXG on S.sale_id = SXG.sale_id
 inner join GAME G on SXG.game_id = G.game_id
 order by sale_nm;
+
+/*Пункт 9*/
+
+create or replace function add_transaction() returns trigger as $$
+  declare best_price real;
+    sale_or_sp int;
+  begin
+
+    --проверяем корректность цены
+    best_price = (select
+   min(t.price) as best_price
+      from (select game_full_price_atm as price
+        from GAME G
+        where new.game_id = G.game_id
+        UNION
+        select
+          game_price_amt as price
+          from SALE S
+          inner join SALE_X_GAME
+          on S.sale_id = SALE_X_GAME.sale_id
+          where (new.time_of_transaction_dttm >= S.sale_start_dttm) and
+                (new.time_of_transaction_dttm <= S.sale_end_dttm) and
+                (new.game_id = SALE_X_GAME.game_id)
+        UNION
+        select
+          game_price_amt as price
+          from SPECIAL_OFFER SP
+          inner join SPECIAL_OFFER_X_GAME SOXG
+            on SP.special_offer_id = SOXG.special_offer_id
+          where (new.time_of_transaction_dttm >= SP.special_offer_start_dttm)
+            and (new.time_of_transaction_dttm <= SP.special_offer_end_dttm)
+            and (new.game_id = SOXG.game_id)
+            and (new.user_id = SP.user_id)
+        ) t );
+    if new.game_final_price_amt <>  best_price then
+      new.game_final_price_amt = best_price;
+      end if ;
+
+
+      --проверяем, указаны ли все специальные предложения или скидки
+    sale_or_sp = (select
+        S.sale_id as sale
+        from SALE S
+        inner join SALE_X_GAME
+        on S.sale_id = SALE_X_GAME.sale_id
+        where (new.time_of_transaction_dttm >= S.sale_start_dttm) and
+              (new.time_of_transaction_dttm <= S.sale_end_dttm) and
+              (new.game_id = SALE_X_GAME.game_id) and
+              (new.game_final_price_amt = game_price_amt));
+    new.sale_id = sale_or_sp;
+    sale_or_sp = (select SP.special_offer_id as special_offer
+        from SPECIAL_OFFER SP
+        inner join SPECIAL_OFFER_X_GAME SOXG
+          on SP.special_offer_id = SOXG.special_offer_id
+        where (new.time_of_transaction_dttm >= SP.special_offer_start_dttm)
+          and (new.time_of_transaction_dttm <= SP.special_offer_end_dttm)
+          and (new.game_id = SOXG.game_id)
+          and (new.user_id = SP.user_id)
+          and (new.game_final_price_amt = game_price_amt));
+
+      --проверяем корректность id
+    while new.transaction_id in (select transaction_id from PURCHASE)
+    loop
+      new.transaction_id = new.transaction_id + 1;
+    end loop;
+
+    return new;
+  end;
+  $$ language plpgsql;
+
+create trigger add_purchase
+before insert on PURCHASE
+for each row
+execute procedure add_transaction();
+
+insert into PURCHASE values (44, 20, null, null, 3, 699, '2018-09-03');
+delete from PURCHASE where transaction_id = 48;
