@@ -3,29 +3,6 @@ create schema ps_store;
 
 set search_path = ps_store;
 
-
--- drop view STUDIO_X_GAME_v;
--- drop view SPECIAL_OFFER_X_GAME_v;
--- drop view STUDIO_v;
--- drop view PURCHASE_v;
--- drop view SALE_v;
--- drop view SPECIAL_OFFER_v;
--- drop view GAME_v;
--- drop view USERS_v;
--- drop view game_advanced_v;
--- drop view sale_advanced_v;
--- drop view sale_x_game_v;
---
--- drop table STUDIO_X_GAME;
--- drop table SPECIAL_OFFER_X_GAME;
--- drop table SALE_X_GAME;
--- drop table STUDIO;
--- drop table PURCHASE;
--- drop table SALE;
--- drop table SPECIAL_OFFER;
--- drop table GAME;
--- drop table USERS;
-
 create table GAME (
   game_id   int   primary key ,
   game_nm   varchar(50)   not null ,
@@ -521,8 +498,8 @@ create or replace function add_special_offer() returns trigger as $$
 
 /*Логика работы:
 при добавлении новой записи в SPECIAL_OFFER никах ихменений не происходит. Триггер работает при добавление
-записей в таблицу SPECIAL_OFFER_X_GAME он смотрит, была ли добавляемая игра в более раннем и валидном специальном
-предложении. Если нет - ничего не происходит, если да - то специальное предложение закрывается*/
+записей в таблицу SPECIAL_OFFER_X_GAME: он смотрит, была ли добавляемая игра в более раннем и валидном специальном
+предложении. Если нет - ничего не происходит, если да - то  старое специальное предложение закрывается*/
 create trigger add_special_offer_x_game
   before insert on SPECIAL_OFFER_X_GAME
   for each row
