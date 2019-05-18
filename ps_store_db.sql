@@ -3,8 +3,22 @@ create schema ps_store;
 
 set search_path = ps_store;
 
+
+-- drop view STUDIO_X_GAME_v;
+-- drop view SPECIAL_OFFER_X_GAME_v;
+-- drop view STUDIO_v;
+-- drop view PURCHASE_v;
+-- drop view SALE_v;
+-- drop view SPECIAL_OFFER_v;
+-- drop view GAME_v;
+-- drop view USERS_v;
+-- drop view game_advanced_v;
+-- drop view sale_advanced_v;
+-- drop view sale_x_game_v;
+--
 -- drop table STUDIO_X_GAME;
 -- drop table SPECIAL_OFFER_X_GAME;
+-- drop table SALE_X_GAME;
 -- drop table STUDIO;
 -- drop table PURCHASE;
 -- drop table SALE;
@@ -162,7 +176,7 @@ insert into SPECIAL_OFFER values (31, 18, 'Для тех, кто давно с �
 insert into SPECIAL_OFFER values (32, 19, 'Для тех, кто давно с нами', '2019-03-28', '2019-04-20');
 insert into SPECIAL_OFFER values (33, 20, 'С днём студента!', '2019-01-20', '2019-01-28');
 insert into SPECIAL_OFFER values (34, 21, 'Феврали ваш!', '2019-02-01', '2019-02-28');
-insert into SPECIAL_OFFER values (35, 19, 'Почётный игрок', '2018-08-27', '2019-09-15');
+insert into SPECIAL_OFFER values (35, 19, 'Почётный игрок', '2018-08-27', '2018-09-15');
 
 insert into SPECIAL_OFFER_X_GAME values (28, 1, 990);
 insert into SPECIAL_OFFER_X_GAME values (28, 2, 1990);
@@ -191,7 +205,7 @@ insert into PURCHASE values (38, 16, null, 29, 6, 1499, '2018-03-13 23:59:59');
 insert into PURCHASE values (39, 16, 23, null, 5, 1899.9, '2018-01-02 14:53:18');
 insert into PURCHASE values (40, 17, null, 30, 7, 1299, '2018-06-02 17:04:30');
 insert into PURCHASE values (41, 17, 24, null, 4, 1249.9, '2019-01-25 21:09:20');
-insert into PURCHASE values (42, 18, null, null, 5, 2990, '2018-11-30 16:03:00');
+insert into PURCHASE values (42, 18, null, null, 5, 2999, '2018-11-30 16:03:00');
 insert into PURCHASE values (43, 19, null, 35, 2, 899, '2018-08-30 18:13:50');
 insert into PURCHASE values (44, 20, 27, null, 3, 599.9, '2018-09-04 20:34:10');
 insert into PURCHASE values (45, 21, null, null, 3, 1599, '2018-10-31 16:16:06');
@@ -405,8 +419,7 @@ inner join SALE_X_GAME SXG on S.sale_id = SXG.sale_id
 inner join GAME G on SXG.game_id = G.game_id
 order by sale_nm;
 
-/*Пункт 9*/
-
+/*Пункт 9-10*/
 create or replace function add_transaction() returns trigger as $$
   declare best_price real;
     sale_or_sp int;
@@ -474,6 +487,7 @@ create or replace function add_transaction() returns trigger as $$
   end;
   $$ language plpgsql;
 
+/*Триггер, проверяющий валидность записи при вставке в таблицу покупок*/
 create trigger add_purchase
 before insert on PURCHASE
 for each row
@@ -481,3 +495,65 @@ execute procedure add_transaction();
 
 insert into PURCHASE values (44, 20, null, null, 3, 699, '2018-09-03');
 delete from PURCHASE where transaction_id = 48;
+
+
+create or replace function add_special_offer() returns trigger as $$
+  declare sp_start_date TIMESTAMP;
+    users_id int;
+  begin
+  users_id = (select user_id as u_id
+          from SPECIAL_OFFER
+          where special_offer_id = new.special_offer_id);
+  sp_start_date = (select special_offer_start_dttm as s_end
+          from SPECIAL_OFFER
+          where special_offer_id = new.special_offer_id);
+  update SPECIAL_OFFER set special_offer_end_dttm = sp_start_date
+    where special_offer_id in (select S.special_offer_id
+      from SPECIAL_OFFER S
+        inner join SPECIAL_OFFER_X_GAME SOXG on S.special_offer_id = SOXG.special_offer_id
+      where SOXG.game_id = new.game_id
+        and S.user_id = users_id
+        and S.special_offer_end_dttm > sp_start_date
+        and S.special_offer_start_dttm < sp_start_date);
+    return new;
+  end;
+  $$ language plpgsql;
+
+/*Логика работы:
+при добавлении новой записи в SPECIAL_OFFER никах ихменений не происходит. Триггер работает при добавление
+записей в таблицу SPECIAL_OFFER_X_GAME он смотрит, была ли добавляемая игра в более раннем и валидном специальном
+предложении. Если нет - ничего не происходит, если да - то специальное предложение закрывается*/
+create trigger add_special_offer_x_game
+  before insert on SPECIAL_OFFER_X_GAME
+  for each row
+  execute procedure add_special_offer();
+
+
+insert into SPECIAL_OFFER values (123, 19, 'Best man award', '2018-09-14', '2018-09-30');
+
+insert into SPECIAL_OFFER_X_GAME values (123, 5, 677.9);
+insert into SPECIAL_OFFER_X_GAME values (123, 2, 777.7);
+
+delete from SPECIAL_OFFER_X_GAME where special_offer_id = 123;
+
+
+/*Небольшая хранимая процедура, которая по заданному промежутку дат выдает небольшой отчет по каждому пользователю:
+имя, сколько игр он купил, на какую сумму он совершил покупки, и сколько сэкономил
+благодаря скидкам/специальным предложениям*/
+
+create or replace function users_report(start_dttm TIMESTAMP, end_dttm TIMESTAMP) returns
+  table (user_nm VARCHAR(20), game_count bigint, all_spendings REAL, saved_money REAL)
+language SQL
+as $$
+  select user_nm, count(*), (case when sum(game_final_price_amt) is null then 0
+    else sum(game_final_price_amt) end) as all_spendings,
+         (case when sum(game_final_price_amt) is null  then 0
+           else sum(game_full_price_atm) - sum(game_final_price_amt) end) as saved
+  from USERS
+  left join PURCHASE P on USERS.user_id = P.user_id
+                            and time_of_transaction_dttm <= end_dttm and time_of_transaction_dttm >= start_dttm
+  left join GAME G on P.game_id = G.game_id
+  group by USERS.user_id, user_nm;
+$$;
+
+select * from users_report('2018-09-01', '2019-05-19');
